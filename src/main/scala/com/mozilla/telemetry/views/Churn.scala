@@ -37,13 +37,14 @@ object ChurnView {
     val logger = org.apache.log4j.Logger.getLogger(this.getClass.getName)
 
     for (i <- 0 to daysCount) {
-      val currentDay = fromDate.plusDays(i).toString("yyyyMMdd")
-      logger.info(s"Processing day: ${currentDay}")
+      try {
+        val currentDay = fromDate.plusDays(i).toString("yyyyMMdd")
+        logger.info(s"Processing day: ${currentDay}")
 
-      val messages = Dataset("telemetry")
-        .where("sourceName") {
-          case "telemetry" => true
-        }.where("sourceVersion") {
+        val messages = Dataset("telemetry")
+          .where("sourceName") {
+            case "telemetry" => true
+          }.where("sourceVersion") {
           case "4" => true
         }.where("docType") {
           case "main" => true
@@ -53,8 +54,10 @@ object ChurnView {
           case date if date == currentDay => true
         }
 
-      run(messages, opts.outputBucket(), currentDay)
-      sc.stop()
+        run(messages, opts.outputBucket(), currentDay)
+      } finally {
+        sc.stop()
+      }
     }
   }
 

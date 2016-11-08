@@ -65,17 +65,20 @@ object ClientCountView {
     val sparkConf = new SparkConf().setAppName("ClientCountView")
     sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
     val sc = new SparkContext(sparkConf)
-    val sqlContext = new SQLContext(sc)
+    try {
+      val sqlContext = new SQLContext(sc)
 
-    val hadoopConf = sc.hadoopConfiguration
-    hadoopConf.set("fs.s3n.impl", "org.apache.hadoop.fs.s3native.NativeS3FileSystem")
-    sqlContext.udf.register("hll_create", hllCreate _)
+      val hadoopConf = sc.hadoopConfiguration
+      hadoopConf.set("fs.s3n.impl", "org.apache.hadoop.fs.s3native.NativeS3FileSystem")
+      sqlContext.udf.register("hll_create", hllCreate _)
 
-    val df = sqlContext.read.load("s3://telemetry-parquet/main_summary/v3")
-    val subset = df.where(s"submission_date_s3 >= $from and submission_date_s3 <= $to")
-    val aggregates = aggregate(subset).coalesce(32)
+      val df = sqlContext.read.load("s3://telemetry-parquet/main_summary/v3")
+      val subset = df.where(s"submission_date_s3 >= $from and submission_date_s3 <= $to")
+      val aggregates = aggregate(subset).coalesce(32)
 
-    aggregates.write.parquet(s"s3://${conf.outputBucket()}/client_count/v$from$to")
-    sc.stop()
+      aggregates.write.parquet(s"s3://${conf.outputBucket()}/client_count/v$from$to")
+    } finally {
+      sc.stop()
+    }
   }
 }

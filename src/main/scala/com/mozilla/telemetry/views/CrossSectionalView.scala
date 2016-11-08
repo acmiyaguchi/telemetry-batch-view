@@ -419,55 +419,56 @@ object CrossSectionalView {
     val sparkConf = new SparkConf().setAppName(this.getClass.getName)
     sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
     val sc = new SparkContext(sparkConf)
+    try {
+      val hiveContext = new HiveContext(sc)
+      import hiveContext.implicits._
 
-    val hiveContext = new HiveContext(sc)
-    import hiveContext.implicits._
+      // Parse command line options
+      val opts = new Opts(args)
 
-    // Parse command line options
-    val opts = new Opts(args)
+      // Read local parquet data, if supplied
+      if (opts.localTable.isSupplied) {
+        val localTable = opts.localTable()
+        val data = hiveContext.read.parquet(localTable)
+        data.registerTempTable("longitudinal")
+      }
 
-    // Read local parquet data, if supplied
-    if(opts.localTable.isSupplied) {
-      val localTable = opts.localTable()
-      val data = hiveContext.read.parquet(localTable)
-      data.registerTempTable("longitudinal")
+      // Generate and save the view
+      val ds = hiveContext
+        .sql("SELECT * FROM longitudinal")
+        .selectExpr(
+          "client_id", "normalized_channel", "submission_date", "geo_country",
+          "session_length", "settings.locale", "settings.is_default_browser",
+          "settings.default_search_engine", "build.architecture", "active_addons",
+          "places_bookmarks_count.sum as bookmarks_sum", "system_cpu.count as cpu_count",
+          "settings.update.channel", "subsession_start_date", "build.version",
+          "reason", "system.memory_mb", "system_os.name as os_name",
+          "system_os.version as os_version", "places_pages_count.sum as pages_count",
+          "active_plugins", "previous_subsession_id", "profile_creation_date",
+          "profile_subsession_counter", "search_counts", "session_id"
+        )
+        .as[Longitudinal]
+      val output = ds.map(new CrossSectional(_))
+
+      // Save to S3
+      if (!opts.dryRun()) {
+        val prefix = s"cross_sectional/${opts.outName()}"
+        val outputBucket = opts.outputBucket()
+        val path = s"s3://${outputBucket}/${prefix}"
+
+
+        require(S3Store.isPrefixEmpty(outputBucket, prefix),
+          s"${path} already exists!")
+
+        output.toDF().write.parquet(path)
+      } else {
+        // Count to ensure the entire dataset is created in a dry-run.
+        println(s"Resulting rows: ${output.count}")
+        val ex = output.take(1)
+        println("=" * 80 + "\n" + ex + "\n" + "=" * 80)
+      }
+    } finally {
+      sc.stop()
     }
-
-    // Generate and save the view
-    val ds = hiveContext
-      .sql("SELECT * FROM longitudinal")
-      .selectExpr(
-        "client_id", "normalized_channel", "submission_date", "geo_country",
-        "session_length", "settings.locale", "settings.is_default_browser",
-        "settings.default_search_engine", "build.architecture", "active_addons",
-        "places_bookmarks_count.sum as bookmarks_sum", "system_cpu.count as cpu_count",
-        "settings.update.channel", "subsession_start_date", "build.version",
-        "reason", "system.memory_mb", "system_os.name as os_name",
-        "system_os.version as os_version", "places_pages_count.sum as pages_count",
-        "active_plugins", "previous_subsession_id", "profile_creation_date",
-        "profile_subsession_counter", "search_counts", "session_id"
-      )
-      .as[Longitudinal]
-    val output = ds.map(new CrossSectional(_))
-
-    // Save to S3
-    if (!opts.dryRun()) {
-      val prefix = s"cross_sectional/${opts.outName()}"
-      val outputBucket = opts.outputBucket()
-      val path = s"s3://${outputBucket}/${prefix}"
-
-
-      require(S3Store.isPrefixEmpty(outputBucket, prefix),
-        s"${path} already exists!")
-
-      output.toDF().write.parquet(path)
-    } else {
-      // Count to ensure the entire dataset is created in a dry-run.
-      println(s"Resulting rows: ${output.count}")
-      val ex = output.take(1)
-      println("="*80 + "\n" + ex + "\n" + "="*80)
-    }
-
-    sc.stop()
   }
 }

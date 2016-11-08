@@ -43,29 +43,30 @@ object SyncView {
     val sparkConf = new SparkConf().setAppName(jobName)
     sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
     implicit val sc = new SparkContext(sparkConf)
-    val sqlContext = new SQLContext(sc)
-    val hadoopConf = sc.hadoopConfiguration
+    try {
+      val sqlContext = new SQLContext(sc)
+      val hadoopConf = sc.hadoopConfiguration
 
-    // We want to end up with reasonably large parquet files on S3.
-    val parquetSize = 512 * 1024 * 1024
-    hadoopConf.setInt("parquet.block.size", parquetSize)
-    hadoopConf.setInt("dfs.blocksize", parquetSize)
-    hadoopConf.set("parquet.enable.summary-metadata", "false")
+      // We want to end up with reasonably large parquet files on S3.
+      val parquetSize = 512 * 1024 * 1024
+      hadoopConf.setInt("parquet.block.size", parquetSize)
+      hadoopConf.setInt("dfs.blocksize", parquetSize)
+      hadoopConf.set("parquet.enable.summary-metadata", "false")
 
-    for (offset <- 0 to Days.daysBetween(from, to).getDays) {
-      val currentDate = from.plusDays(offset)
-      val currentDateString = currentDate.toString("yyyyMMdd")
+      for (offset <- 0 to Days.daysBetween(from, to).getDays) {
+        val currentDate = from.plusDays(offset)
+        val currentDateString = currentDate.toString("yyyyMMdd")
 
-      println("=======================================================================================")
-      println(s"BEGINNING JOB $jobName FOR $currentDateString")
+        println("=======================================================================================")
+        println(s"BEGINNING JOB $jobName FOR $currentDateString")
 
-      val ignoredCount = sc.accumulator(0, "Number of Records Ignored")
-      val processedCount = sc.accumulator(0, "Number of Records Processed")
+        val ignoredCount = sc.accumulator(0, "Number of Records Ignored")
+        val processedCount = sc.accumulator(0, "Number of Records Processed")
 
-      val messages = Dataset("telemetry")
-        .where("sourceName") {
-          case "telemetry" => true
-        }.where("sourceVersion") {
+        val messages = Dataset("telemetry")
+          .where("sourceName") {
+            case "telemetry" => true
+          }.where("sourceVersion") {
           case "4" => true
         }.where("docType") {
           case "sync" => true
@@ -75,52 +76,53 @@ object SyncView {
           case date if date == currentDate.toString("yyyyMMdd") => true
         }.records(conf.limit.get)
 
-      val rowRDD = messages.flatMap(m => {
-        messageToRow(m) match {
-          case Nil =>
-            ignoredCount += 1
-            None
-          case x =>
-            processedCount += 1
-            x
+        val rowRDD = messages.flatMap(m => {
+          messageToRow(m) match {
+            case Nil =>
+              ignoredCount += 1
+              None
+            case x =>
+              processedCount += 1
+              x
+          }
+        })
+
+        val records = sqlContext.createDataFrame(rowRDD, SyncPingConverter.syncType)
+
+        if (conf.outputBucket.supplied) {
+          // Note we cannot just use 'partitionBy' below to automatically populate
+          // the submission_date partition, because none of the write modes do
+          // quite what we want:
+          //  - "overwrite" causes the entire vX partition to be deleted and replaced with
+          //    the current day's data, so doesn't work with incremental jobs
+          //  - "append" would allow us to generate duplicate data for the same day, so
+          //    we would need to add some manual checks before running
+          //  - "error" (the default) causes the job to fail after any data is
+          //    loaded, so we can't do single day incremental updates.
+          //  - "ignore" causes new data not to be saved.
+          // So we manually add the "submission_date_s3" parameter to the s3path.
+          val s3prefix = s"$jobName/$schemaVersion/submission_date_s3=$currentDateString"
+          val s3path = s"s3://${conf.outputBucket()}/$s3prefix"
+
+          records.write.mode("error").parquet(s3path)
+
+          // Then remove the _SUCCESS file so we don't break Spark partition discovery.
+          S3Store.deleteKey(conf.outputBucket(), s"$s3prefix/_SUCCESS")
+          println(s"Wrote data to s3 path $s3path")
+        } else {
+          // Write the data to a local file.
+          records.write.parquet(conf.outputFilename())
+          println(s"Wrote data to local file ${conf.outputFilename()}")
         }
-      })
 
-      val records = sqlContext.createDataFrame(rowRDD, SyncPingConverter.syncType)
-
-      if (conf.outputBucket.supplied) {
-        // Note we cannot just use 'partitionBy' below to automatically populate
-        // the submission_date partition, because none of the write modes do
-        // quite what we want:
-        //  - "overwrite" causes the entire vX partition to be deleted and replaced with
-        //    the current day's data, so doesn't work with incremental jobs
-        //  - "append" would allow us to generate duplicate data for the same day, so
-        //    we would need to add some manual checks before running
-        //  - "error" (the default) causes the job to fail after any data is
-        //    loaded, so we can't do single day incremental updates.
-        //  - "ignore" causes new data not to be saved.
-        // So we manually add the "submission_date_s3" parameter to the s3path.
-        val s3prefix = s"$jobName/$schemaVersion/submission_date_s3=$currentDateString"
-        val s3path = s"s3://${conf.outputBucket()}/$s3prefix"
-
-        records.write.mode("error").parquet(s3path)
-
-        // Then remove the _SUCCESS file so we don't break Spark partition discovery.
-        S3Store.deleteKey(conf.outputBucket(), s"$s3prefix/_SUCCESS")
-        println(s"Wrote data to s3 path $s3path")
-      } else {
-        // Write the data to a local file.
-        records.write.parquet(conf.outputFilename())
-        println(s"Wrote data to local file ${conf.outputFilename()}")
+        println(s"JOB $jobName COMPLETED SUCCESSFULLY FOR $currentDateString")
+        println("     RECORDS SEEN:    %d".format(ignoredCount.value + processedCount.value))
+        println("     RECORDS IGNORED: %d".format(ignoredCount.value))
+        println("=======================================================================================")
       }
-
-      println(s"JOB $jobName COMPLETED SUCCESSFULLY FOR $currentDateString")
-      println("     RECORDS SEEN:    %d".format(ignoredCount.value + processedCount.value))
-      println("     RECORDS IGNORED: %d".format(ignoredCount.value))
-      println("=======================================================================================")
+    } finally {
+      sc.stop()
     }
-
-    sc.stop()
   }
 
   // Convert the given Heka message containing a "sync" ping

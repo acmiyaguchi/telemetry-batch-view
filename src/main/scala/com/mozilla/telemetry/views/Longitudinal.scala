@@ -124,21 +124,24 @@ object LongitudinalView {
     sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
     implicit val sc = new SparkContext(sparkConf)
 
-    val messages = Dataset("telemetry-sample")
-      .where("sourceName") {
-        case "telemetry" => true
-      }.where("sourceVersion") {
-      case "4" => true
-    }.where("docType") {
-      case "main" => true
-    }.where("submissionDate") {
-      case date if date <= to && date >= from => true
-    }.where("sampleId") {
-      case "42" => true
-    }
+    try {
+      val messages = Dataset("telemetry-sample")
+        .where("sourceName") {
+          case "telemetry" => true
+        }.where("sourceVersion") {
+        case "4" => true
+      }.where("docType") {
+        case "main" => true
+      }.where("submissionDate") {
+        case date if date <= to && date >= from => true
+      }.where("sampleId") {
+        case "42" => true
+      }
 
-    run(opts: Opts, messages)
-    sc.stop()
+      run(opts: Opts, messages)
+    } finally {
+      sc.stop()
+    }
   }
 
   private def run(opts: Opts, messages: RDD[Message]): Unit = {

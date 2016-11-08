@@ -37,18 +37,19 @@ object CrashAggregateView {
     val sparkConf = new SparkConf().setAppName("CrashAggregateVie")
     sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
     implicit val sc = new SparkContext(sparkConf)
-    val sqlContext = new SQLContext(sc)
-    val hadoopConf = sc.hadoopConfiguration
-    hadoopConf.set("fs.s3n.impl", "org.apache.hadoop.fs.s3native.NativeS3FileSystem")
+    try {
+      val sqlContext = new SQLContext(sc)
+      val hadoopConf = sc.hadoopConfiguration
+      hadoopConf.set("fs.s3n.impl", "org.apache.hadoop.fs.s3native.NativeS3FileSystem")
 
-    for (offset <- 0 to Days.daysBetween(from, to).getDays) {
-      val currentDate = from.plusDays(offset)
-      val currentDateString = currentDate.toString("yyyy-MM-dd")
+      for (offset <- 0 to Days.daysBetween(from, to).getDays) {
+        val currentDate = from.plusDays(offset)
+        val currentDateString = currentDate.toString("yyyy-MM-dd")
 
-      val messages = Dataset("telemetry")
-        .where("sourceName") {
-          case "telemetry" => true
-        }.where("sourceVersion") {
+        val messages = Dataset("telemetry")
+          .where("sourceName") {
+            case "telemetry" => true
+          }.where("sourceVersion") {
           case "4" => true
         }.where("docType") {
           case doc if List("main", "crash") contains doc => true
@@ -56,22 +57,23 @@ object CrashAggregateView {
           case date if date == currentDate.toString("yyyyMMdd") => true
         }.map(message => message.fieldsAsMap + ("payload" -> message.payload.getOrElse("")))
 
-      val (rowRDD, main_processed, main_ignored, browser_crash_processed, browser_crash_ignored, content_crash_ignored) = compareCrashes(sc, messages)
+        val (rowRDD, main_processed, main_ignored, browser_crash_processed, browser_crash_ignored, content_crash_ignored) = compareCrashes(sc, messages)
 
-      // create a dataframe containing all the crash aggregates
-      val schema = buildSchema()
-      val records = sqlContext.createDataFrame(rowRDD.coalesce(1), schema)
+        // create a dataframe containing all the crash aggregates
+        val schema = buildSchema()
+        val records = sqlContext.createDataFrame(rowRDD.coalesce(1), schema)
 
-      // upload the resulting aggregate Spark records to S3
-      records.write.mode(SaveMode.Overwrite).parquet(s"s3://${conf.outputBucket()}/crash_aggregates/v1/submission_date=$currentDateString")
+        // upload the resulting aggregate Spark records to S3
+        records.write.mode(SaveMode.Overwrite).parquet(s"s3://${conf.outputBucket()}/crash_aggregates/v1/submission_date=$currentDateString")
 
-      println("=======================================================================================")
-      println(s"JOB COMPLETED SUCCESSFULLY FOR $currentDate")
-      println(s"${main_processed.value} main pings processed, ${main_ignored.value} pings ignored")
-      println(s"${browser_crash_processed.value} browser crash pings processed, ${browser_crash_ignored.value} pings ignored")
-      println(s"${content_crash_ignored.value} content crash pings ignored")
-      println("=======================================================================================")
-
+        println("=======================================================================================")
+        println(s"JOB COMPLETED SUCCESSFULLY FOR $currentDate")
+        println(s"${main_processed.value} main pings processed, ${main_ignored.value} pings ignored")
+        println(s"${browser_crash_processed.value} browser crash pings processed, ${browser_crash_ignored.value} pings ignored")
+        println(s"${content_crash_ignored.value} content crash pings ignored")
+        println("=======================================================================================")
+      }
+    }finally {
       sc.stop()
     }
   }

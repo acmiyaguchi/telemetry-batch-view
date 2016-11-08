@@ -36,53 +36,56 @@ object AddonsView {
     val sparkConf = new SparkConf().setAppName(jobName)
     sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
     implicit val sc = new SparkContext(sparkConf)
-    val hadoopConf = sc.hadoopConfiguration
+    try {
+      val hadoopConf = sc.hadoopConfiguration
 
-    // We want to end up with reasonably large parquet files on S3.
-    val parquetSize = 512 * 1024 * 1024
-    hadoopConf.setInt("parquet.block.size", parquetSize)
-    hadoopConf.setInt("dfs.blocksize", parquetSize)
-    // Don't write metadata files, because they screw up partition discovery.
-    // This is fixed in Spark 2.0, see:
-    //   https://issues.apache.org/jira/browse/SPARK-13207
-    //   https://issues.apache.org/jira/browse/SPARK-15454
-    //   https://issues.apache.org/jira/browse/SPARK-15895
-    hadoopConf.set("parquet.enable.summary-metadata", "false")
+      // We want to end up with reasonably large parquet files on S3.
+      val parquetSize = 512 * 1024 * 1024
+      hadoopConf.setInt("parquet.block.size", parquetSize)
+      hadoopConf.setInt("dfs.blocksize", parquetSize)
+      // Don't write metadata files, because they screw up partition discovery.
+      // This is fixed in Spark 2.0, see:
+      //   https://issues.apache.org/jira/browse/SPARK-13207
+      //   https://issues.apache.org/jira/browse/SPARK-15454
+      //   https://issues.apache.org/jira/browse/SPARK-15895
+      hadoopConf.set("parquet.enable.summary-metadata", "false")
 
-    val spark = SparkSession
-      .builder()
-      .appName("AddonsView")
-      .getOrCreate()
+      val spark = SparkSession
+        .builder()
+        .appName("AddonsView")
+        .getOrCreate()
 
-    val outputBucket = conf.outputBucket()
-    val inputBucket = conf.inputBucket.get.getOrElse(outputBucket)
+      val outputBucket = conf.outputBucket()
+      val inputBucket = conf.inputBucket.get.getOrElse(outputBucket)
 
-    val mainSummary = spark.read.parquet(s"s3://$inputBucket/main_summary/${MainSummaryView.schemaVersion}")
+      val mainSummary = spark.read.parquet(s"s3://$inputBucket/main_summary/${MainSummaryView.schemaVersion}")
 
-    for (offset <- 0 to Days.daysBetween(from, to).getDays) {
-      val currentDate = from.plusDays(offset)
-      val currentDateString = currentDate.toString("yyyyMMdd")
+      for (offset <- 0 to Days.daysBetween(from, to).getDays) {
+        val currentDate = from.plusDays(offset)
+        val currentDateString = currentDate.toString("yyyyMMdd")
 
-      println("=======================================================================================")
-      println(s"BEGINNING JOB $jobName $schemaVersion FOR $currentDateString")
+        println("=======================================================================================")
+        println(s"BEGINNING JOB $jobName $schemaVersion FOR $currentDateString")
 
-      val addons = addonsFromMain(mainSummary.filter(s"submission_date_s3 == '$currentDateString'"))
+        val addons = addonsFromMain(mainSummary.filter(s"submission_date_s3 == '$currentDateString'"))
 
-      val s3prefix = s"$jobName/$schemaVersion/submission_date_s3=$currentDateString"
-      val s3path = s"s3://$outputBucket/$s3prefix"
+        val s3prefix = s"$jobName/$schemaVersion/submission_date_s3=$currentDateString"
+        val s3path = s"s3://$outputBucket/$s3prefix"
 
-      // Repartition the dataframe by sample_id before saving.
-      val partitioned = addons.repartition(100, addons.col("sample_id"))
+        // Repartition the dataframe by sample_id before saving.
+        val partitioned = addons.repartition(100, addons.col("sample_id"))
 
-      // Then write to S3 using the given fields as path name partitions. If any
-      // data already exists for the target day, replace it.
-      partitioned.write.partitionBy("sample_id").mode("overwrite").parquet(s3path)
+        // Then write to S3 using the given fields as path name partitions. If any
+        // data already exists for the target day, replace it.
+        partitioned.write.partitionBy("sample_id").mode("overwrite").parquet(s3path)
 
-      // Then remove the _SUCCESS file so we don't break Spark partition discovery.
-      S3Store.deleteKey(conf.outputBucket(), s"$s3prefix/_SUCCESS")
+        // Then remove the _SUCCESS file so we don't break Spark partition discovery.
+        S3Store.deleteKey(conf.outputBucket(), s"$s3prefix/_SUCCESS")
 
-      println(s"JOB $jobName COMPLETED SUCCESSFULLY FOR $currentDateString")
-      println("=======================================================================================")
+        println(s"JOB $jobName COMPLETED SUCCESSFULLY FOR $currentDateString")
+        println("=======================================================================================")
+      }
+    } finally {
       sc.stop()
     }
   }

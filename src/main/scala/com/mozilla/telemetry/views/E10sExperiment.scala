@@ -51,11 +51,11 @@ object E10sExperimentView {
     val sparkConf = new SparkConf().setAppName("E10sExperiment")
     sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
     implicit val sc = new SparkContext(sparkConf)
-
-    val messages = Dataset("telemetry")
-      .where("sourceName") {
-        case "telemetry" => true
-      }.where("sourceVersion") {
+    try {
+      val messages = Dataset("telemetry")
+        .where("sourceName") {
+          case "telemetry" => true
+        }.where("sourceVersion") {
         case "4" => true
       }.where("docType") {
         case "saved_session" => true
@@ -68,9 +68,10 @@ object E10sExperimentView {
       }.where("appVersion") {
         case x if x == version => true
       }
-
-    run(opts, messages)
-    sc.stop()
+      run(opts, messages)
+    } finally {
+      sc.stop()
+    }
   }
 
   private def run(opts: Opts, messages: RDD[Message]) {

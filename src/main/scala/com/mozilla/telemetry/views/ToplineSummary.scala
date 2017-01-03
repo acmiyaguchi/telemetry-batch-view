@@ -19,12 +19,12 @@ object ToplineSummary {
   private val main_summary_url: String = "s3://telemetry-parquet/main_summary/v3"
   private val logger: Logger = org.apache.log4j.Logger.getLogger(this.getClass.getName)
 
+  private val sparkConf: SparkConf = new SparkConf().setAppName("FirefoxSummary")
+  sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
   private var currentSession: SparkSession = null
 
   def session: SparkSession = {
     if (currentSession == null) {
-      val sparkConf: SparkConf = new SparkConf().setAppName("FirefoxSummary")
-      sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
       currentSession = SparkSession
         .builder()
         .config(sparkConf)
@@ -177,6 +177,7 @@ object ToplineSummary {
       StructField("channel", StringType, nullable = true),
       StructField("os", StringType, nullable = true)))
 
+    implicit val sc = SparkContext.getOrCreate(sparkConf)
     val messages: RDD[Message] = Dataset("telemetry")
       .where("docType") { case "crash" => true }
       .where("appName") { case "Firefox" => true }

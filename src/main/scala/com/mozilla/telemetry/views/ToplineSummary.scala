@@ -17,14 +17,21 @@ import scala.util.matching.Regex
 
 object ToplineSummary {
   private val main_summary_url: String = "s3://telemetry-parquet/main_summary/v3"
-
   private val logger: Logger = org.apache.log4j.Logger.getLogger(this.getClass.getName)
-  private val sparkConf: SparkConf = new SparkConf().setAppName("FirefoxSummary")
-  sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
-  implicit val sc = SparkContext.getOrCreate(sparkConf)
-  private val spark = SparkSession.builder.config(sparkConf).getOrCreate()
-  import spark.implicits._
 
+  private var currentSession: SparkSession = null
+
+  def session: SparkSession = {
+    if (currentSession == null) {
+      val sparkConf: SparkConf = new SparkConf().setAppName("FirefoxSummary")
+      sparkConf.setMaster(sparkConf.get("spark.master", "local[*]"))
+      currentSession = SparkSession
+        .builder()
+        .config(sparkConf)
+        .getOrCreate()
+    }
+    currentSession
+  }
 
   private val SecondsInHour: Int = 60 * 60
   private val SecondsInDay: Int = SecondsInHour * 24
@@ -128,6 +135,9 @@ object ToplineSummary {
     * @return Report DataFrame with normalized fields (aside from search_counts).
     */
   private def createReportDataset(mainSummary: DataFrame, startDate: String, endDate: String): DataFrame = {
+    val s = session
+    import s.implicits._
+
     mainSummary
       .filter($"submission_date_s3" >= startDate)
       .filter($"submission_date_s3" <= endDate)
@@ -159,6 +169,9 @@ object ToplineSummary {
     * @return Dataset where every row represents a single crash
     */
   private def createCrashDataset(startDate: String, endDate: String): DataFrame = {
+    val s = session
+    import s.implicits._
+
     val CrashSchema = StructType(List(
       StructField("country", StringType, nullable = true),
       StructField("channel", StringType, nullable = true),
@@ -179,7 +192,7 @@ object ToplineSummary {
     }
 
     val crashRDD = res.filter(_.isSuccess)map(_.get)
-    val crashData = spark.createDataFrame(crashRDD, CrashSchema)
+    val crashData = s.createDataFrame(crashRDD, CrashSchema)
 
     crashData.select(
       normalizeCountry($"country").alias("country"),
@@ -215,6 +228,9 @@ object ToplineSummary {
     * @return dataframe with aggregated search counts with a column per search engine
     */
   private def searchAggregates(reportData: DataFrame): DataFrame = {
+    val s = session
+    import s.implicits._
+
     val searchSchema = MainSummaryView.buildSearchSchema
 
     val searchData = reportData
@@ -268,6 +284,9 @@ object ToplineSummary {
     * @return dataframe with client aggregates
     */
   private def clientValues(reportData: DataFrame, reportDate: String): DataFrame = {
+    val s = session
+    import s.implicits._
+
     val fmt = format.DateTimeFormat.forPattern("yyyyMMdd")
     val dt: DateTime = fmt.parseDateTime(reportDate)
     val reportTimestamp = dt.getMillis() / 1000
@@ -314,6 +333,9 @@ object ToplineSummary {
   }
 
   def main(args: Array[String]): Unit = {
+    val s = session
+    import s.implicits._
+
     val opts = new Opts(args)
     val reportStart = opts.reportStart()
     val mode = opts.mode()
@@ -328,7 +350,7 @@ object ToplineSummary {
 
     logger.info(s"Starting report from $from to $to with mode $mode")
     try {
-      val mainSummaryData: DataFrame = spark.read.parquet(main_summary_url)
+      val mainSummaryData: DataFrame = s.read.parquet(main_summary_url)
         .filter($"sample_id" === 1)
       val reportData = createReportDataset(mainSummaryData, from, to)
       val crashData = createCrashDataset(from, to)
@@ -350,7 +372,7 @@ object ToplineSummary {
       finalReport.write.mode("overwrite").parquet(s3path)
       logger.info(s"Topline Report completed for $reportStart")
     } finally {
-      spark.stop()
+      s.stop()
     }
   }
 }

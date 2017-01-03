@@ -116,7 +116,7 @@ object ToplineSummary {
     "VG","VI","VN","VU","WF","WS","YE","YT","ZA","ZM","ZW")
 
   private val normalizeCountry: UserDefinedFunction = udf {
-    (country: String) => if (countryNames contains country) { country } else { "Other" }
+    (country: String) => if (!country.isEmpty && (countryNames contains country)) { country } else { "Other" }
   }
 
   /**
@@ -170,7 +170,15 @@ object ToplineSummary {
       .where("submissionDate") { case date => startDate <= date && date <= endDate }
       .records()
 
-    val crashRDD = messages.map(messageToRow)
+
+    val res = messages.map(m => Try(messageToRow(m)))
+
+    val processingError = res.filter(_.isFailure).count()
+    if (processingError > 0) {
+      logger.warn(s"Encountered $processingError errors while processing crash pings")
+    }
+
+    val crashRDD = res.filter(_.isSuccess)map(_.get)
     val crashData = spark.createDataFrame(crashRDD, CrashSchema)
 
     crashData.select(
@@ -318,6 +326,7 @@ object ToplineSummary {
     val from = reportStart
     val to = from // TODO: to date should be manipulated by mode
 
+    logger.info(s"Starting report from $from to $to with mode $mode")
     try {
       val mainSummaryData: DataFrame = spark.read.parquet(main_summary_url)
         .filter($"sample_id" === 1)
@@ -325,7 +334,9 @@ object ToplineSummary {
       val crashData = createCrashDataset(from, to)
 
       if (debug) {
+        logger.info("Counting report data")
         reportData.count()
+        logger.info("Counting crash data")
         crashData.count()
       }
 

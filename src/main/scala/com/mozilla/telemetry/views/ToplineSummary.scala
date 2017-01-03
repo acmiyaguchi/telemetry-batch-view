@@ -335,7 +335,9 @@ object ToplineSummary {
 
       if (debug) {
         logger.info("Counting report data")
-        reportData.count()
+        try { reportData.count() } catch {
+          case e: Exception => e.printStackTrace()
+        }
         logger.info("Counting crash data")
         crashData.count()
       }

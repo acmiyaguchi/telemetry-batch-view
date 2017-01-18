@@ -7,6 +7,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.json4s.JsonAST.JNothing
 import org.json4s.{DefaultFormats, JValue}
 import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.PrivateMethodTester._
 
 import scala.collection.mutable
 
@@ -128,6 +129,28 @@ class SyncViewTest extends FlatSpec with Matchers{
       val dataframe = sqlContext.createDataFrame(rdd, SyncPingConverter.syncType)
       // Note: We intentionally validate with a *different* json object from the one we parsed.
       validateMultiSyncPing(dataframe.collect(), SyncViewTestPayloads.multiSyncPing)
+    } finally {
+      sc.stop()
+    }
+  }
+
+  "SyncPing engineToRows" can "handle invalid names" in {
+    val sparkConf = new SparkConf().setAppName("SyncPing")
+    sparkConf.setMaster(sparkConf.get("spark.master", "local[1]"))
+    val sc = new SparkContext(sparkConf)
+    sc.setLogLevel("WARN")
+
+    val ping = SyncViewTestPayloads.partialEnginePing
+    val toEnginesRows = PrivateMethod[List[Row]]('toEnginesRows)
+    try {
+      val row = SyncPingConverter invokePrivate toEnginesRows(ping)
+       row.head match {
+        case Row(name: String, _, _, _, _, _, _) => assert(name == "clients")
+        case _ => fail()
+      }
+
+      // The second name is invalid UTF8 -> \uDC00, we should only have one value
+      assert(row.length == 1)
     } finally {
       sc.stop()
     }

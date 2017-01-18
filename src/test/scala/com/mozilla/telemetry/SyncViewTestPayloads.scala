@@ -392,4 +392,17 @@ object SyncViewTestPayloads {
       |}
     """.stripMargin)
 
+  def partialEnginePing = parse(
+    """
+      |[
+      |  {
+      |    "name": "clients",
+      |    "took": 249
+      |  },
+      |  {
+      |    "name": "\uDC00"
+      |  }
+      |]
+      |"""".stripMargin)
+
 }

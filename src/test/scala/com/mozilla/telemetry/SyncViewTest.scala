@@ -140,7 +140,7 @@ class SyncViewTest extends FlatSpec with Matchers{
     val sc = new SparkContext(sparkConf)
     sc.setLogLevel("WARN")
 
-    val ping = SyncViewTestPayloads.partialEnginePing
+    val ping = SyncViewTestPayloads.engineInvalidUTF8Ping
     val toEnginesRows = PrivateMethod[List[Row]]('toEnginesRows)
     try {
       val row = SyncPingConverter invokePrivate toEnginesRows(ping)

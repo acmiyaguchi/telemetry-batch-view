@@ -392,17 +392,20 @@ object SyncViewTestPayloads {
       |}
     """.stripMargin)
 
-  def partialEnginePing = parse(
-    """
-      |[
-      |  {
-      |    "name": "clients",
-      |    "took": 249
-      |  },
-      |  {
-      |    "name": "\uDC00"
-      |  }
-      |]
-      |"""".stripMargin)
+  def engineInvalidUTF8Ping = {
+    val invalid: Array[Byte] = Array(0xdc.toByte, 0.toByte)
+    val first =
+      """
+        |[
+        | {
+        |   "name": "client",
+        |   "took": 249
+        | },
+        | {
+        |   "name": """".stripMargin
+    val second =
+      """"}]""".stripMargin
 
+    parse(new String(first.getBytes ++ invalid ++ second.getBytes, "UTF-8"))
+  }
 }

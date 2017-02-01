@@ -107,7 +107,7 @@ object SyncView {
         val s3prefix = s"$jobName/$schemaVersion/submission_date_s3=$currentDateString"
         val s3path = s"s3://${conf.outputBucket()}/$s3prefix"
 
-        records.repartition(10).write.mode("overwrite").parquet(s3path)
+        records.write.mode("overwrite").parquet(s3path)
 
         // Then remove the _SUCCESS file so we don't break Spark partition discovery.
         S3Store.deleteKey(conf.outputBucket(), s"$s3prefix/_SUCCESS")
@@ -206,25 +206,7 @@ object SyncPingConverter {
 
   // The record of a single sync event.
   def syncType = StructType(List(
-    // These field names are the same as used by MainSummaryView
-    StructField("app_build_id", StringType, nullable = true), // application/buildId
-    StructField("app_display_version", StringType, nullable = true), // application/displayVersion
-    StructField("app_name", StringType, nullable = true), // application/name
-    StructField("app_version", StringType, nullable = true), // application/version
-    StructField("app_channel", StringType, nullable = true), // application/channel
-    // XXX - how do we record the "platform"?
-
-    // These fields are unique to the sync pings.
-    StructField("uid", StringType, nullable = false),
-    StructField("deviceID", StringType, nullable = true), // should always exists, but old pings didn't record it.
-    StructField("when", LongType, nullable = false),
-    StructField("took", LongType, nullable = false),
-    StructField("failureReason", failureType, nullable = true),
-    StructField("status", statusType, nullable = true),
-    // "why" is defined in the client-side schema but currently never populated.
-    StructField("why", StringType, nullable = true),
-    StructField("engines", ArrayType(SyncPingConverter.engineType, containsNull = false), nullable = true),
-    StructField("devices", ArrayType(SyncPingConverter.deviceType, containsNull = false), nullable = true)
+    StructField("engines", ArrayType(SyncPingConverter.engineType, containsNull = false), nullable = true)
   ))
 
  /*
@@ -431,70 +413,8 @@ object SyncPingConverter {
 
   // Convert an "old style" ping that records a single Sync to a row.
   private def singleSyncPayloadToRow(ping: JValue, sync: JValue): Option[Row] = {
-    val application = ping \ "application"
-    val payload = ping \ "payload"
-
-    def stringFromSyncOrPayload(s: String): String = {
-      sync \ s match {
-        case JString(x) => x
-        case _ =>
-          payload \ s match {
-            case JString(x) => x
-            case _ => null
-          }
-      }
-    }
-
     val row = Row(
-      // The metadata...
-      application \ "buildId" match {
-        case JString(x) => x
-        case _ => return None // a required field.
-      },
-      application \ "displayVersion" match {
-        case JString(x) => x
-        case _ => return None // a required field.
-      },
-      application \ "name" match {
-        case JString(x) => x
-        case _ => return None // a required field.
-      },
-      application \ "version" match {
-        case JString(x) => x
-        case _ => return None // a required field.
-      },
-      application \ "channel" match {
-        case JString(x) => x
-        case _ => return None // a required field.
-      },
-
-      // Info about the sync.
-      stringFromSyncOrPayload("uid") match {
-        case null => return None // a required field.
-        case x => x
-      },
-
-      stringFromSyncOrPayload("deviceID"),
-
-      sync \ "when" match {
-        case JInt(x) => x.toLong
-        case _ => return None
-      },
-      sync \ "took" match {
-        case JInt(x) => x.toLong
-        case _ => return None
-      },
-      failureReasonToRow(sync \ "failureReason"),
-      statusToRow(sync \ "status"),
-      sync \ "why" match {
-        case JString(x) => x
-        case _ => null
-      },
-      toEnginesRows(sync \ "engines"),
-      sync \ "devices" match {
-        case devices @ JArray(_) => toDeviceRows(devices)
-        case _ => null
-      }
+      toEnginesRows(sync \ "engines")
     )
 
     Some(row)

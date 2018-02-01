@@ -390,7 +390,7 @@ object MainSummaryView {
   // to a map containing just the fields we're interested in.
   def messageToRow(message: Message, userPrefs: List[UserPref], scalarDefinitions: List[(String, ScalarDefinition)], histogramDefinitions: List[(String, HistogramDefinition)]): Option[Row] = {
     try {
-      val doc = message.asJson
+      val doc = message.toJValue
       lazy val environment = doc \ "environment"
       lazy val payload = doc \ "payload"
       lazy val meta = doc \ "meta"

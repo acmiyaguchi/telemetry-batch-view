@@ -61,34 +61,28 @@ class HistogramsClass extends MetricsClass {
 
   // Locations for non-keyed histograms
   private val histogramLocations =
-    HistogramLocation(List("payload.histograms"), "") ::
+    HistogramLocation(List("payload", "histograms"), "") ::
     processTypes.map(generateLocations("histograms"))
 
   private val keyedHistogramLocations =
-    HistogramLocation(List("payload.keyedHistograms"), "") ::
+    HistogramLocation(List("payload", "keyedHistograms"), "") ::
     processTypes.map(generateLocations("keyedHistograms"))
 
   private def parseHistogramLocation[HistogramFormat : Manifest](
-    payload: Map[String, Any],
+    payload: JValue,
     location: HistogramLocation
   ): Option[Map[String, HistogramFormat]] = {
     implicit val formats = DefaultFormats
-    for {
-      // Extract the json from the payload as a JValue
-      json <- payload.get(location.path.head)
-      root = parse(json.asInstanceOf[String])
-      // Traverse the rest of the histogram path
-      leaf = location.path.tail.foldLeft(root)((acc, x) => acc \ x)
-      histograms <- leaf.extractOpt[Map[String, HistogramFormat]]
-    } yield (
-      histograms.map(pair => (pair._1 + location.suffix, pair._2))
-    )
+    // Traverse the rest of the histogram path
+    val leaf = location.path.foldLeft(payload)((acc, x) => acc \ x)
+    val histograms = leaf.extractOpt[Map[String, HistogramFormat]]
+    histograms.map(x => x.map(pair => (pair._1 + location.suffix, pair._2)))
   }
 
   private def stripPayload[HistogramFormat: Manifest](
     locations: List[HistogramLocation]
   )(
-    payload: Map[String, Any]
+    payload: JValue
   ): Map[String, HistogramFormat] = {
     locations.map(parseHistogramLocation[HistogramFormat](payload, _))
       .flatten

@@ -595,7 +595,7 @@ class LongitudinalTest extends FlatSpec with Matchers with PrivateMethodTester {
   }
 
   "ClientIterator" should "not trim histories of size < 1000" in {
-    val template = ("foo", Map("client" -> "foo"))
+    val template = ("foo", render("client" -> "foo"))
     val history = List.fill(ParentConstant)(template)
     val split_history = new ClientIterator(history.iterator).toList
     assert(split_history.length == 1)
@@ -603,7 +603,7 @@ class LongitudinalTest extends FlatSpec with Matchers with PrivateMethodTester {
   }
 
   it should "not trim histories of size 1000" in {
-    val template = ("foo", Map("client" -> "foo"))
+    val template = ("foo", render("client" -> "foo"))
     val history = List.fill(1000)(template)
     val split_history = new ClientIterator(history.iterator).toList
     assert(split_history.length == 1)
@@ -611,8 +611,8 @@ class LongitudinalTest extends FlatSpec with Matchers with PrivateMethodTester {
   }
 
   it should "trim histories of size > 1000" in {
-    val template1 = ("foo", Map("client" -> "foo"))
-    val template2 = ("bar", Map("client" -> "bar"))
+    val template1 = ("foo", render("client" -> "foo"))
+    val template2 = ("bar", render("client" -> "bar"))
     val history = List.fill(2000)(template1) ++ List.fill(2000)(template2)
     val split_history = new ClientIterator(history.iterator).toList
     assert(split_history.length == 2)

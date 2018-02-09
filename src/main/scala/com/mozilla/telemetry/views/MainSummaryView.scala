@@ -159,7 +159,7 @@ object MainSummaryView {
           case channel => filterChannel.isEmpty || channel == filterChannel.get
         }.where("appVersion") {
           case v => filterVersion.isEmpty || v == filterVersion.get
-        }.records(conf.limit.get)
+        }.records(conf.limit.get, Some(sc.defaultParallelism * 4))
 
       if(!messages.isEmpty()){
         val rowRDD = messages.flatMap(m => {

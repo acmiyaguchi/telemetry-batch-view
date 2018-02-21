@@ -1707,13 +1707,36 @@ class MainSummaryViewTest extends FlatSpec with Matchers {
   "Malformed message" should "be ignored" in {
 
     var message = RichMessage("1234", Map("documentId" -> "foo", "submissionDate" -> "1234"), None)
-    defaultMessageToRow(message).isDefined should be (true)
+    defaultMessageToRow(message).isDefined should be(true)
 
     message = RichMessage("1234", Map("submissionDate" -> "1234"), None)
-    defaultMessageToRow(message) should be (None)
+    defaultMessageToRow(message) should be(None)
 
     // broken messages should not be parsed
     message = RichMessage("1234", Map("documentId" -> "foo", "submissionDate" -> "1234", "submission" -> "{broken json}"), None)
-    message.toJValue should be (None)
+    message.toJValue should be(None)
+  }
+
+  "Profile" can "be properly shown" in {
+
+    val message = RichMessage(
+      "1234",
+      Map(
+        "documentId" -> "foo",
+        "submissionDate" -> "1234",
+        "environment.profile" ->
+          """
+            |{
+            |  "creationDate": 16446,
+            |  "resetDate": 16446
+            |}""".stripMargin),
+      None)
+
+    val expected = Map(
+      "profile_creation_date" -> 16446,
+      "profile_reset_date" -> 16446
+    )
+
+    compare(message, expected)
   }
 }

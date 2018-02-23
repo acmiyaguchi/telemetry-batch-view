@@ -309,6 +309,29 @@ object MainPing{
     }
   }
 
+  def histogramToGeometricMean(h: JValue, ignoreZero: Boolean = true): Option[Long] = {
+    implicit val formats = org.json4s.DefaultFormats
+
+    (h \ "values") match {
+      case JNothing => None
+      case v => v.extractOpt[Map[Int, Int]] match {
+        case Some(h) => {
+          val histogram = if (ignoreZero) h.filterKeys(_ != 0) else h
+          val totalCount = histogram.values.reduce(_ + _)
+          if (totalCount <= 0) {
+            None
+          } else {
+            val acc = histogram
+              .map { case (bucket, count) => Math.log(bucket.toDouble) * count }
+              .reduce(_ + _)
+            Some(Math.exp(acc / totalCount).toLong)
+          }
+        }
+        case _ => None
+      }
+    }
+  }
+
   // Given histogram h, return true if it has a value in the "true" bucket,
   // or false if it has a value in the "false" bucket, or None otherwise.
   def booleanHistogramToBoolean(h: JValue): Option[Boolean] = {

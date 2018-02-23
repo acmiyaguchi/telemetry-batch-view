@@ -455,6 +455,52 @@ class MainPingTest extends FlatSpec with Matchers {
     MainPing.histogramToMean(example \ "H0") should be (None) // Missing
   }
 
+  "Histogram geometric means" can "be computed" in {
+    val example = parse("""{
+      |  "H1": {
+      |    "values": {
+      |      "1": 0,
+      |      "2": 1,
+      |      "3": 0
+      |    }
+      |  },
+      |  "H2": {
+      |    "values": {
+      |      "1": 1,
+      |      "2": 1,
+      |      "3": 2
+      |    }
+      |  },
+      |  "H3": {
+      |    "values": {
+      |      "0": 1,
+      |      "1": 1,
+      |      "2": 1
+      |    }
+      |  },
+      |  "H4": {
+      |    "values": {
+      |      "1": 0,
+      |      "2": 0,
+      |      "3": 0
+      |    }
+      |  },
+      |  "H5": {
+      |    "values": {
+      |      "10000": 10000,
+      |      "1": 0,
+      |      "2": 0
+      |    }
+      |  }
+      |}""".stripMargin)
+    MainPing.histogramToGeometricMean(example \ "H1") should be (Some(2))  // empty values
+    MainPing.histogramToGeometricMean(example \ "H2") should be (Some(2))  // multiple values
+    MainPing.histogramToGeometricMean(example \ "H3") should be (Some(1))  // handling bucket=0
+    MainPing.histogramToGeometricMean(example \ "H3", ignoreZero=false) should be (Some(0)) // what actually should happen
+    MainPing.histogramToGeometricMean(example \ "H4") should be (None) // no counts
+    MainPing.histogramToGeometricMean(example \ "H5") should be (Some(10000))  // avoid overflows
+  }
+
   "Enum Histograms" can "be converted to Rows" in {
     val example = parse("""{
       |  "H1": {

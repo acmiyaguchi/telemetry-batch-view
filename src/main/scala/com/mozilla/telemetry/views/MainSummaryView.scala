@@ -650,7 +650,23 @@ object MainSummaryView {
         MainPing.histogramToThresholdCount(histograms("content") \ "INPUT_EVENT_RESPONSE_COALESCED_MS", 2500),
 
         MainPing.histogramToThresholdCount(histograms("parent") \ "GHOST_WINDOWS", 1),
-        MainPing.histogramToThresholdCount(histograms("content") \ "GHOST_WINDOWS", 1)
+        MainPing.histogramToThresholdCount(histograms("content") \ "GHOST_WINDOWS", 1),
+
+        // bug 1424564 c#1
+        MainPing.histogramToGeometricMean(histograms("parent") \ "MEMORY_TOTAL"),
+        MainPing.histogramToGeometricMean(histograms("parent") \ "MEMORY_UNIQUE"),
+        MainPing.histogramToGeometricMean(histograms("parent") \ "MEMORY_RESIDENT_FAST"),
+        MainPing.histogramToGeometricMean(histograms("parent") \ "MEMORY_VSIZE"),
+        MainPing.histogramToGeometricMean(histograms("parent") \ "MEMORY_VSIZE_MAX_CONTIGUOUS"),
+        MainPing.histogramToGeometricMean(histograms("parent") \ "MEMORY_HEAP_ALLOCATED"),
+        MainPing.histogramToGeometricMean(histograms("parent") \ "MEMORY_HEAP_COMMITTED_UNUSED"),
+        MainPing.histogramToGeometricMean(histograms("content") \ "MEMORY_TOTAL"),
+        MainPing.histogramToGeometricMean(histograms("content") \ "MEMORY_UNIQUE"),
+        MainPing.histogramToGeometricMean(histograms("content") \ "MEMORY_RESIDENT_FAST"),
+        MainPing.histogramToGeometricMean(histograms("content") \ "MEMORY_VSIZE"),
+        MainPing.histogramToGeometricMean(histograms("content") \ "MEMORY_VSIZE_MAX_CONTIGUOUS"),
+        MainPing.histogramToGeometricMean(histograms("content") \ "MEMORY_HEAP_ALLOCATED"),
+        MainPing.histogramToGeometricMean(histograms("content") \ "MEMORY_HEAP_COMMITTED_UNUSED")
       ).map {
         _ match {
           case e: Option[Any] => e.orNull
@@ -1017,7 +1033,22 @@ object MainSummaryView {
       StructField("input_event_response_coalesced_ms_content_above_2500", LongType, nullable = true),
 
       StructField("ghost_windows_main_above_1", LongType, nullable = true),
-      StructField("ghost_windows_content_above_1", LongType, nullable = true)
+      StructField("ghost_windows_content_above_1", LongType, nullable = true),
+
+      StructField("memory_total_main_geo_mean", LongType, nullable = true),
+      StructField("memory_unique_main_geo_mean", LongType, nullable = true),
+      StructField("memory_resident_fast_main_geo_mean", LongType, nullable = true),
+      StructField("memory_vsize_main_geo_mean", LongType, nullable = true),
+      StructField("memory_vsize_max_contiguous_main_geo_mean", LongType, nullable = true),
+      StructField("memory_heap_allocated_main_geo_mean", LongType, nullable = true),
+      StructField("memory_heap_committed_unused_main_geo_mean", LongType, nullable = true),
+      StructField("memory_total_content_geo_mean", LongType, nullable = true),
+      StructField("memory_unique_content_geo_mean", LongType, nullable = true),
+      StructField("memory_resident_fast_content_geo_mean", LongType, nullable = true),
+      StructField("memory_vsize_content_geo_mean", LongType, nullable = true),
+      StructField("memory_vsize_max_contiguous_content_geo_mean", LongType, nullable = true),
+      StructField("memory_heap_allocated_content_geo_mean", LongType, nullable = true),
+      StructField("memory_heap_committed_unused_content_geo_mean", LongType, nullable = true)
     ) ++ buildUserPrefsSchema(userPrefs)
       ++ buildScalarSchema(scalarDefinitions)
       ++ buildHistogramSchema(histogramDefinitions))
